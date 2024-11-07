@@ -83,7 +83,7 @@ def main():
   elif 'windows' == target:
     args += [
       'skia_use_direct3d=true',
-      'extra_cflags=["-DSK_FONT_HOST_USE_SYSTEM_SETTINGS"]',
+      'extra_cflags=["-DSK_FONT_HOST_USE_SYSTEM_SETTINGS", "/MD"]',
     ]
   elif 'android' == target:
     args += [
