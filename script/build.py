@@ -70,7 +70,7 @@ def main():
         # TODO: use clang on all targets!
         args += [
             'skia_gl_standard="gles"',
-            'extra_cflags_cc=["-fno-exceptions", "-fno-rtti", "-flax-vector-conversions=all"',
+            'extra_cflags_cc=["-fno-exceptions", "-fno-rtti", "-flax-vector-conversions=all"]',
             'cc="clang"',
             'cxx="clang++"',
         ]
