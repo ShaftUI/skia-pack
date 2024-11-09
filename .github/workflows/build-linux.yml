@@ -1,0 +1,119 @@
+on:
+  # push:
+  #   branches:
+  #     - main
+  # pull_request:
+  #   branches:
+  #     - main
+  workflow_dispatch:
+    inputs:
+      skip_release:
+        description: "Skip release related steps? (true/false)"
+        required: true
+        default: "false"
+
+env:
+  version: m126-6bfb13368b
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    container: ubuntu:20.04
+    strategy:
+      matrix:
+        build_type: [Debug, Release]
+      fail-fast: false
+    steps:
+      - uses: actions/checkout@v2
+      - run: ./script/prepare_linux.sh
+      - run: python3 script/check_release.py --version ${{ env.version }} --build-type ${{ matrix.build_type }}
+        if: ${{ github.event.inputs.skip_release != 'true' && github.ref == 'refs/heads/main' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - run: PATH=/usr/lib/binutils-2.26/bin:$PATH python3 script/checkout.py --version ${{ env.version }}
+      - run: PATH=/usr/lib/binutils-2.26/bin:$PATH python3 script/build.py --build-type ${{ matrix.build_type }}
+      - run: PATH=/usr/lib/binutils-2.26/bin:$PATH python3 script/archive.py --version ${{ env.version }} --build-type ${{ matrix.build_type }}
+      - uses: actions/upload-artifact@v3
+        if: ${{ github.event.inputs.skip_release != 'true' && github.ref == 'refs/heads/main' }}
+        with:
+          name: Skia-${{ env.version }}-linux-${{ matrix.build_type }}-x64.zip
+          path: "*.zip"
+      - run: python3 script/release.py --version ${{ env.version }} --build-type ${{ matrix.build_type }}
+        if: ${{ github.event.inputs.skip_release != 'true' && github.ref == 'refs/heads/main' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  linux-arm64:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        build_type: [Debug, Release]
+      fail-fast: false
+    steps:
+      - uses: actions/checkout@v2
+      - uses: uraimo/run-on-arch-action@v2.8.1
+        name: Assemble
+        id: assemble
+        if: ${{ github.event.inputs.skip_release != 'true' && github.ref == 'refs/heads/main' }}
+        with:
+          arch: aarch64
+          distro: ubuntu20.04
+          githubToken: ${{ secrets.GITHUB_TOKEN }}
+          # Mount checkout directory as /checkout in the container
+          dockerRunArgs: |
+            --volume "${GITHUB_WORKSPACE}:/checkout"
+          env: |
+            build_type: ${{ matrix.build_type }}
+            build_version: ${{ env.version }}
+            artifact_name: Skia-${{ env.version }}-linux-${{ matrix.build_type }}-arm64.zip
+            GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # The shell to run commands with in the container
+          shell: /bin/bash
+          install: |
+            apt-get update -q -y
+            apt-get install -q -y bash
+          run: |
+            cd /checkout
+            /bin/bash script/prepare_linux_arm.sh
+            python3 script/check_release.py --version ${build_version} --build-type ${build_type}
+            python3 script/checkout.py --version ${build_version}
+            python3 script/build.py --build-type ${build_type} --build-type ${build_type}
+            python3 script/archive.py --version ${build_version} --build-type ${build_type}
+            echo "Produced artifact at ${PWD}/${artifact_name}"
+      - uses: uraimo/run-on-arch-action@v2.8.1
+        name: Test Build
+        id: test-build
+        if: ${{ github.event.inputs.skip_release == 'true' || github.ref != 'refs/heads/main' }}
+        with:
+          arch: aarch64
+          distro: ubuntu20.04
+          githubToken: ${{ secrets.GITHUB_TOKEN }}
+          # Mount checkout directory as /checkout in the container
+          dockerRunArgs: |
+            --volume "${GITHUB_WORKSPACE}:/checkout"
+          env: |
+            build_type: ${{ matrix.build_type }}
+            build_version: ${{ env.version }}
+            artifact_name: Skia-${{ env.version }}-linux-${{ matrix.build_type }}-arm64.zip
+          # The shell to run commands with in the container
+          shell: /bin/bash
+          install: |
+            apt-get update -q -y
+            apt-get install -q -y bash
+          run: |
+            cd /checkout
+            /bin/bash script/prepare_linux_arm.sh
+            python3 script/checkout.py --version ${build_version}
+            python3 script/build.py --build-type ${build_type} --build-type ${build_type}
+            echo "Verified build"
+      - uses: actions/upload-artifact@v3
+        if: ${{ github.event.inputs.skip_release != 'true' && github.ref == 'refs/heads/main' }}
+        with:
+          name: Skia-${{ env.version }}-linux-${{ matrix.build_type }}-arm64.zip
+          path: "*.zip"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - run: python3 script/release.py --version ${{ env.version }} --build-type ${{ matrix.build_type }} --target linux --machine arm64
+        if: ${{ github.event.inputs.skip_release != 'true' && github.ref == 'refs/heads/main' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
